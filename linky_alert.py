@@ -7,6 +7,18 @@ Envoie un email d'alerte si la consommation est en-dessous d'un seuil
 
 Dépendances : requests (pip install requests)
 Hébergement : PythonAnywhere (tâche planifiée quotidienne)
+
+
+Conso API est un service gratuit et open-source qui permet aux particuliers d'accéder aux données de consommation de leur compteur Linky. Boris
+
+Connectez-vous sur conso.boris.sh
+Cliquez sur « Donner mon accord » → vous serez redirigé sur votre espace Enedis
+Autorisez le partage de données → un token JWT vous est remis (format xxx.yyy.zzz)
+Notez aussi votre PRM (14 chiffres, affiché sur le compteur en appuyant sur +)
+
+
+
+
 """
 
 import requests
