@@ -1,0 +1,27 @@
+name: Linky Alert
+
+on:
+  schedule:
+    - cron: '34 8 * * *'   # Tous les jours à 8h34 UTC (10h34 heure de Paris)
+  workflow_dispatch:         # Permet de lancer manuellement pour tester
+
+jobs:
+  check-linky:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Linky alert script
+        env:
+          LINKY_TOKEN: ${{ secrets.LINKY_TOKEN }}
+          LINKY_PRM: ${{ secrets.LINKY_PRM }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: python linky_alert.py
