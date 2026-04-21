@@ -26,4 +26,5 @@ jobs:
           LINKY_PRM: ${{ secrets.LINKY_PRM }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ALERT_TO: ${{ secrets.ALERT_TO }} 
+          SMTP_USER : ${{ secrets.SMTP_USER }} 
         run: python linky_alert.py
