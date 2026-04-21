@@ -37,7 +37,7 @@ import os
 LINKY_TOKEN   = os.environ.get("LINKY_TOKEN", "xxx.yyy.zzz")
 LINKY_PRM     = os.environ.get("LINKY_PRM", "12345678901234")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "mon_mot_de_passe")
-SMTP_USER  = os.environ.get("SMTP_USER", "gmail")
+SMTP_USER  = os.environ.get("SMTP_USER", "error@gmail")
 ALERT_TO =os.environ.get("ALERT_TO").split(",") 
 
 
