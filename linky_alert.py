@@ -52,11 +52,11 @@ SEUIL_WH = 1000000  # 100 Wh ≈ quasi-zéro pour un logement habité
 # Configuration email (expéditeur)
 SMTP_SERVER   = "smtp.gmail.com"      # ou smtp.orange.fr, smtp.free.fr…
 SMTP_PORT     = 587
-SMTP_USER     = "rodolphe.bedel@gmail.com"
+
 
  
 # Destinataires de l'alerte (liste)
-ALERT_TO = ["rodolphe.bedel@gmail.com", "rodolphetotal@gmail.com"]
+
  
 
 # ─────────────────────────────────────────────
