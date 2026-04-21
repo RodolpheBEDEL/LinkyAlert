@@ -159,7 +159,7 @@ Votre script Linky 🔌
     msg["To"]      = ", ".join(ALERT_TO)
     msg["Subject"] = sujet
     msg.attach(MIMEText(corps, "plain", "utf-8"))
-
+    print(SMTP_USER, SMTP_PASSWORD)
     try:
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.ehlo()
