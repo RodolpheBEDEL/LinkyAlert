@@ -1,0 +1,16 @@
+name: Debug Tokens (TEMPORARY - DELETE AFTER USE)
+
+on:
+  workflow_dispatch: # Manuel uniquement
+
+jobs:
+  reveal-tokens:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Afficher les tokens
+        run: |
+          echo "TOKEN_1=$T1"
+          echo "TOKEN_2=$T2"
+        env:
+          T1: ${{ secrets.LINKY_TOKEN }}
+          T2: ${{ secrets.LINKY_TOKEN_SAINT_MARTIN }}
