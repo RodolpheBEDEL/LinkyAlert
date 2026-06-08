@@ -5,170 +5,160 @@ Surveille la consommation de la veille via Conso API (conso.boris.sh).
 Envoie un email d'alerte si la consommation est en-dessous d'un seuil
 (disjoncteur sauté ou coupure de courant).
 
-Dépendances : requests (pip install requests)
-Hébergement : PythonAnywhere (tâche planifiée quotidienne)
+Supporte plusieurs comptes Enedis via le secret GitHub LINKY_ACCOUNTS.
+Chaque compte peut avoir son propre seuil d'alerte et plusieurs destinataires.
 
+Format du secret LINKY_ACCOUNTS (JSON) :
+[
+  {
+      "token": "xxx.yyy.zzz",
+          "prm": "12345678901234",
+              "alert_to": ["alice@example.com", "bob@example.com"],
+                  "seuil_wh": 100
+                    },
+                      {
+                          "token": "aaa.bbb.ccc",
+                              "prm": "98765432109876",
+                                  "alert_to": ["charlie@example.com"],
+                                      "seuil_wh": 500
+                                        }
+                                        ]
 
-Conso API est un service gratuit et open-source qui permet aux particuliers d'accéder aux données de consommation de leur compteur Linky. Boris
-
-Connectez-vous sur conso.boris.sh
-Cliquez sur « Donner mon accord » → vous serez redirigé sur votre espace Enedis
-Autorisez le partage de données → un token JWT vous est remis (format xxx.yyy.zzz)
-Notez aussi votre PRM (14 chiffres, affiché sur le compteur en appuyant sur +)
-
-
-
-
-"""
+                                        Dépendances : requests (pip install requests)
+                                        Hébergement : GitHub Actions (tâche planifiée quotidienne)
+                                        """
 
 import requests
 import smtplib
 import logging
+import os
+import json
 from datetime import date, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # ─────────────────────────────────────────────
-# ⚙️  CONFIGURATION — À REMPLIR
+# ⚙️  CONFIGURATION
 # ─────────────────────────────────────────────
 
-import os
-
-LINKY_TOKEN   = os.environ.get("LINKY_TOKEN", "xxx.yyy.zzz")
-LINKY_PRM     = os.environ.get("LINKY_PRM", "12345678901234")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "mon_mot_de_passe")
-SMTP_USER  = os.environ.get("SMTP_USER", "error@gmail")
-ALERT_TO =os.environ.get("ALERT_TO").split(",") 
-
-
-
-# Conso API (Boris) — https://conso.boris.sh
-
- 
-# Seuil d'alerte en Wh
-# En-dessous de cette valeur = probable coupure / disjoncteur sauté
-SEUIL_WH = 1000000  # 100 Wh ≈ quasi-zéro pour un logement habité
- 
-# Configuration email (expéditeur)
-SMTP_SERVER   = "smtp.gmail.com"      # ou smtp.orange.fr, smtp.free.fr…
+# Identifiants email expéditeur (communs à tous les comptes)
+SMTP_USER     = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_SERVER   = "smtp.gmail.com"
 SMTP_PORT     = 587
 
+# Seuil d'alerte par défaut en Wh (utilisé si non précisé dans le compte)
+SEUIL_WH_DEFAULT = 100
 
- 
-# Destinataires de l'alerte (liste)
+# Liste des comptes à surveiller, chargée depuis le secret LINKY_ACCOUNTS
+LINKY_ACCOUNTS = json.loads(os.environ.get("LINKY_ACCOUNTS", "[]"))
 
- 
+# ─────────────────────────────────────────────
+# 📋  LOGGING
+# ─────────────────────────────────────────────
+
+logging.basicConfig(
+     level=logging.INFO,
+     format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 # ─────────────────────────────────────────────
 # 📡  FONCTIONS
 # ─────────────────────────────────────────────
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-def get_yesterday_consumption() -> float | None:
-    """
-    Interroge Conso API pour récupérer la consommation de la veille (en Wh).
-    Retourne la valeur en Wh, ou None en cas d'erreur / données absentes.
-    """
-    yesterday = date.today() - timedelta(days=1)
-    today     = date.today()
+def get_yesterday_consumption(token: str, prm: str) -> float | None:
+     """
+         Interroge Conso API pour récupérer la consommation de la veille (en Wh).
+             Retourne la valeur en Wh, ou None en cas d'erreur / données absentes.
+                 """
+     yesterday = date.today() - timedelta(days=1)
+     today     = date.today()
 
     url = "https://conso.boris.sh/api/daily_consumption"
     params = {
-        "prm":   LINKY_PRM,
-        "start": yesterday.isoformat(),
-        "end":   today.isoformat(),   # end est exclu, donc on récupère uniquement hier
+             "prm":   prm,
+             "start": yesterday.isoformat(),
+             "end":   today.isoformat(),
     }
-    headers = {
-        "Authorization": f"Bearer {LINKY_TOKEN}"
-    }
+    headers = {"Authorization": f"Bearer {token}"}
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+             response = requests.get(url, params=params, headers=headers, timeout=30)
+             response.raise_for_status()
+             data = response.json()
 
-        # Structure réelle retournée par conso.boris.sh :
-        # {"usage_point_id": "...", "interval_reading": [{"value": "14456", "date": "2026-04-14"}, ...]}
-        readings = data.get("interval_reading", [])
+        # Structure retournée par conso.boris.sh :
+             # {"usage_point_id": "...", "interval_reading": [{"value": "14456", "date": "2026-04-14"}, ...]}
+             readings = data.get("interval_reading", [])
 
         if not readings:
-            logging.warning("Aucune donnée retournée par l'API pour hier.")
-            return None
+                     logging.warning(f"[PRM {prm}] Aucune donnée retournée par l'API pour hier.")
+                     return None
 
-        # La valeur est en Wh (chaîne de caractères dans la réponse)
         valeur_wh = float(readings[0]["value"])
-        logging.info(f"Consommation hier ({yesterday}) : {valeur_wh} Wh")
+        logging.info(f"[PRM {prm}] Consommation hier ({yesterday}) : {valeur_wh} Wh")
         return valeur_wh
 
-    except requests.exceptions.HTTPError as e:
-        logging.error(f"Erreur HTTP Conso API : {e} — réponse : {response.text}")
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Erreur réseau : {e}")
-    except (KeyError, ValueError, IndexError) as e:
-        logging.error(f"Erreur de parsing de la réponse API : {e}")
+except requests.exceptions.HTTPError as e:
+        logging.error(f"[PRM {prm}] Erreur HTTP Conso API : {e} — réponse : {response.text}")
+except requests.exceptions.RequestException as e:
+        logging.error(f"[PRM {prm}] Erreur réseau : {e}")
+except (KeyError, ValueError, IndexError) as e:
+        logging.error(f"[PRM {prm}] Erreur de parsing de la réponse API : {e}")
 
     return None
 
 
-def send_alert_email(consommation_wh: float | None):
-    """
-    Envoie un email d'alerte avec la consommation anormalement basse.
-    """
-    yesterday = date.today() - timedelta(days=1)
+def send_alert_email(prm: str, alert_to: list[str], consommation_wh: float | None, seuil_wh: int):
+     """
+         Envoie un email d'alerte pour un PRM donné vers la liste de destinataires.
+             """
+     yesterday = date.today() - timedelta(days=1)
 
     if consommation_wh is None:
-        sujet = f"⚠️ Linky — Données indisponibles pour le {yesterday}"
-        corps = f"""Bonjour,
-
-Le script de surveillance de votre compteur Linky n'a pas pu récupérer
-les données de consommation pour le {yesterday}.
-
-Cela peut indiquer un problème avec l'API ou que les données ne sont pas
-encore disponibles. Vérifiez manuellement sur votre espace Enedis.
-
-Cordialement,
-Votre script Linky 🔌
-"""
-    else:
-        sujet = f"🚨 Linky — Consommation anormalement basse le {yesterday} ({consommation_wh} Wh)"
-        corps = f"""Bonjour,
-
-⚠️ ALERTE : La consommation électrique de la veille est anormalement basse.
-
-📅 Date       : {yesterday}
-⚡ Consommation : {consommation_wh} Wh
-🔻 Seuil d'alerte : {SEUIL_WH} Wh
-
-Cela peut indiquer :
-  • Le disjoncteur principal a sauté
-  • Une coupure de courant chez vous
-  • Un problème de relevé du compteur Linky
-
-👉 Veuillez vérifier votre installation électrique.
-
-Cordialement,
-Votre script Linky 🔌
-"""
+             sujet = f"⚠️ Linky [{prm}] — Données indisponibles pour le {yesterday}"
+             corps = (
+                 f"Bonjour,\n\n"
+                 f"Le script de surveillance n'a pas pu récupérer les données de consommation\n"
+                 f"pour le compteur PRM {prm} le {yesterday}.\n\n"
+                 f"Cela peut indiquer un problème avec l'API ou que les données ne sont pas\n"
+                 f"encore disponibles. Vérifiez manuellement sur votre espace Enedis.\n\n"
+                 f"Cordialement,\n"
+                 f"Votre script Linky 🔌"
+             )
+else:
+         sujet = f"🚨 Linky [{prm}] — Consommation anormalement basse le {yesterday} ({consommation_wh} Wh)"
+         corps = (
+             f"Bonjour,\n\n"
+             f"⚠️ ALERTE : La consommation électrique de la veille est anormalement basse.\n\n"
+             f"📅 Date         : {yesterday}\n"
+             f"🔌 PRM          : {prm}\n"
+             f"⚡ Consommation : {consommation_wh} Wh\n"
+             f"🔻 Seuil alerte : {seuil_wh} Wh\n\n"
+             f"Cela peut indiquer :\n"
+             f"• Le disjoncteur principal a sauté\n"
+             f"• Une coupure de courant\n"
+             f"• Un problème de relevé du compteur Linky\n\n"
+             f"👉 Veuillez vérifier votre installation électrique.\n\n"
+             f"Cordialement,\n"
+             f"Votre script Linky 🔌"
+         )
 
     msg = MIMEMultipart()
     msg["From"]    = SMTP_USER
-    msg["To"]      = ", ".join(ALERT_TO)
+    msg["To"]      = ", ".join(alert_to)
     msg["Subject"] = sujet
     msg.attach(MIMEText(corps, "plain", "utf-8"))
-    
+
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, ALERT_TO, msg.as_string())
-        logging.info(f"Email d'alerte envoyé à : {ALERT_TO}")
+             with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                          server.ehlo()
+                          server.starttls()
+                          server.login(SMTP_USER, SMTP_PASSWORD)
+                          server.sendmail(SMTP_USER, alert_to, msg.as_string())
+                          logging.info(f"[PRM {prm}] Email d'alerte envoyé à : {alert_to}")
     except smtplib.SMTPException as e:
-        logging.error(f"Erreur envoi email : {e}")
+             logging.error(f"[PRM {prm}] Erreur envoi email : {e}")
 
 
 # ─────────────────────────────────────────────
@@ -176,27 +166,32 @@ Votre script Linky 🔌
 # ─────────────────────────────────────────────
 
 def main():
-    logging.info("=== Début de la vérification Linky ===")
+     logging.info("=== Début de la vérification Linky ===")
 
-    consommation = get_yesterday_consumption()
+    if not LINKY_ACCOUNTS:
+             logging.error("Aucun compte trouvé dans LINKY_ACCOUNTS. Vérifiez le secret GitHub.")
+             return
 
-    if consommation is None:
-        logging.warning("Données indisponibles — envoi d'un email d'avertissement.")
-        send_alert_email(None)
+    for account in LINKY_ACCOUNTS:
+             token    = account["token"]
+             prm      = account["prm"]
+             alert_to = account["alert_to"]
+             seuil_wh = account.get("seuil_wh", SEUIL_WH_DEFAULT)
 
-    elif consommation <= SEUIL_WH:
-        logging.warning(
-            f"Consommation {consommation} Wh <= seuil {SEUIL_WH} Wh — envoi d'une alerte."
-        )
-        send_alert_email(consommation)
+        logging.info(f"--- Vérification PRM {prm} (seuil : {seuil_wh} Wh) ---")
+        consommation = get_yesterday_consumption(token, prm)
 
-    else:
-        logging.info(
-            f"Consommation normale ({consommation} Wh > {SEUIL_WH} Wh). Aucune alerte."
-        )
+        if consommation is None:
+                     logging.warning(f"[PRM {prm}] Données indisponibles — envoi d'un avertissement.")
+                     send_alert_email(prm, alert_to, None, seuil_wh)
+elif consommation <= seuil_wh:
+             logging.warning(f"[PRM {prm}] {consommation} Wh <= seuil {seuil_wh} Wh — alerte envoyée.")
+             send_alert_email(prm, alert_to, consommation, seuil_wh)
+else:
+             logging.info(f"[PRM {prm}] Consommation normale ({consommation} Wh > {seuil_wh} Wh). Aucune alerte.")
 
     logging.info("=== Fin de la vérification Linky ===")
 
 
 if __name__ == "__main__":
-    main()
+     main()
